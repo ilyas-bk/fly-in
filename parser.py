@@ -20,13 +20,12 @@ class FileParser:
         self.existing_connections: Set[tuple] = set()
         self.has_start_hub = False
         self.has_end_hub = False
-        
-        self.network: Dict[str, Any] = {
+
+        self.network: dict = {
             'nb_drones': 0,
-            'start_hub': {},
-            'hubs': [],
-            'end_hub': {},
-            'connections': []
+            'start_hub': '',  # Stores the name of the starting node
+            'end_hub': '',    # Stores the name of the destination node
+            'nodes': {}       # Lookup table: name -> hub attributes & neighbors
         }
 
     def read_file(self) -> None:
@@ -109,19 +108,15 @@ class FileParser:
         h_type = match_groups['type']
         name = match_groups['name']
         
-        # Constraint: Zone names must be unique
         if name in self.defined_zones:
             raise ValueError(f"Parsing Error (Line {line_num}): Zone name '{name}' has already been defined.")
         
-        # Parse flexible metadata block
         metadata = self._parse_metadata(match_groups['meta'], line_num)
         
-        # Constraint: Handle and validate Zone Types
         zone_type = metadata.get('zone', 'normal')
         if zone_type not in self.VALID_ZONE_TYPES:
-            raise ValueError(f"Parsing Error (Line {line_num}): Invalid zone type '{zone_type}'. Must be one of {self.VALID_ZONE_TYPES}")
+            raise ValueError(f"Parsing Error (Line {line_num}): Invalid zone type '{zone_type}'.")
 
-        # Constraint: Capacity values must be positive integers
         max_drones = 1
         if 'max_drones' in metadata:
             try:
@@ -130,27 +125,30 @@ class FileParser:
             except ValueError:
                 raise ValueError(f"Parsing Error (Line {line_num}): 'max_drones' must be a positive integer.")
 
+        # Build the hub dictionary with a pre-initialized neighbors map
         hub_data = {
-            'name': name,
             'coords': [int(match_groups['x']), int(match_groups['y'])],
             'zone_type': zone_type,
             'color': metadata.get('color', None),
-            'max_drones': max_drones
+            'max_drones': max_drones,
+            'current_drones': 0,  # Ready to track during the simulation!
+            'neighbors': {}       # Will be filled by _handle_connection
         }
 
-        # Route structures based on specific hub configuration types
+        # Store the node globally in our nodes dictionary
+        self.network['nodes'][name] = hub_data
+
+        # Keep track of which string is the start and end target
         if h_type == 'start_hub':
-            if self.has_start_hub:
-                raise ValueError(f"Parsing Error (Line {line_num}): Duplicate start_hub discovered. Only 1 allowed.")
-            self.has_start_hub = True
-            self.network['start_hub'] = hub_data
+            if self.has_start_hub:  # Check the boolean flag for duplicates
+                raise ValueError(f"Parsing Error (Line {line_num}): Duplicate start_hub discovered.")
+            self.has_start_hub = True  # <-- ADD THIS LINE
+            self.network['start_hub'] = name
         elif h_type == 'end_hub':
-            if self.has_end_hub:
-                raise ValueError(f"Parsing Error (Line {line_num}): Duplicate end_hub discovered. Only 1 allowed.")
-            self.has_end_hub = True
-            self.network['end_hub'] = hub_data
-        else:
-            self.network['hubs'].append(hub_data)
+            if self.has_end_hub:  # Check the boolean flag for duplicates
+                raise ValueError(f"Parsing Error (Line {line_num}): Duplicate end_hub discovered.")
+            self.has_end_hub = True  # <-- ADD THIS LINE
+            self.network['end_hub'] = name
 
         self.defined_zones.add(name)
 
@@ -179,11 +177,14 @@ class FileParser:
             except ValueError:
                 raise ValueError(f"Parsing Error (Line {line_num}): 'max_link_capacity' must be a positive integer.")
 
-        self.network['connections'].append({
-            'start': start,
-            'end': end,
+        # Link start -> end
+        self.network['nodes'][start]['neighbors'][end] = {
             'max_link_capacity': max_capacity
-        })
+        }
+        # Link end -> start (Bidirectional handling)
+        self.network['nodes'][end]['neighbors'][start] = {
+            'max_link_capacity': max_capacity
+        }
         
         self.existing_connections.add(connection_pair)
 
