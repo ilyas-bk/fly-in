@@ -6,6 +6,7 @@ class SolutionLogic:
     def __init__(self) -> None:
         pass
 
+    # make the metadata usable for the dijkstra algorithm
     def prepare_graph(self, network: dict):
         hubs: list(dict)
         hubs.append(network['start_hub'])
@@ -20,6 +21,7 @@ class SolutionLogic:
                 if hub['name'] == conn['start']:
                     cost = 2 if network['hubs'][conn['end']][''] == "restricted" else 1
 
+    # the dijkstra algorithm
     def dijkstra(self, graph: dict, src: str, dest: str) -> None:
         inf = sys.maxsize
         node_data = {key: {'cost': inf, 'pred': []} for key in graph.keys()}
