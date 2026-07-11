@@ -22,13 +22,16 @@ class SolutionLogic:
                     cost = 2 if network['hubs'][conn['end']][''] == "restricted" else 1
 
     # the dijkstra algorithm
+    # we want a list of the paths, from shortest to longest
+    # got to find path with blocked and unblocked nodes
+
     def dijkstra(self, graph: dict, src: str, dest: str) -> None:
-        inf = sys.maxsize
+        inf = sys.maxsize # infinite value
         node_data = {key: {'cost': inf, 'pred': []} for key in graph.keys()}
         node_data[src]['cost'] = 0
-        visited = []
-        temp = src
-        min_heap = []
+        visited = [] # the visted nodes tracker
+        temp = src # temp value
+        min_heap = [] # the heap
         for i in range(len(node_data) - 1):
             if temp not in visited:
                 visited.append(temp)

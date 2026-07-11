@@ -192,7 +192,7 @@ class FileParser:
 if __name__ == "__main__":
     import json
     # Use your target text file path here
-    parser = FileParser("03_ultimate_challenge.txt")
+    parser = FileParser("03_priority_puzzle.txt")
     try:
         parser.read_file()
         result = parser.parse()
