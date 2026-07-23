@@ -1,21 +1,20 @@
 import re
 from typing import Any, Dict, Set, Optional
+from data import Drone, Zone, Network
 
 class FileParser:
-    # Generalized patterns to validate basic syntax structure cleanly
     PATTERNS = {
         'nb_drones_patt': re.compile(r"^nb_drones:\s+(?P<nb_drones>\d+)$"),
         'hub_patt': re.compile(r"^(?P<type>start_hub|hub|end_hub):\s+(?P<name>[^\s-]+)\s+(?P<x>[-]?\d+)\s+(?P<y>[-]?\d+)(?:\s+\[(?P<meta>.*)\])?$"),
         'connection_patt': re.compile(r"^connection:\s+(?P<start>[^\s-]+)-(?P<end>[^\s-]+)(?:\s+\[(?P<meta>.*)\])?$")
     }
-    
+
     VALID_ZONE_TYPES = {"normal", "blocked", "restricted", "priority"}
 
     def __init__(self, file_path: str):
         self.file_path = file_path
         self.lines_raw = list()
-        
-        # State tracking for validation
+
         self.defined_zones: Set[str] = set()
         self.existing_connections: Set[tuple] = set()
         self.has_start_hub = False
@@ -23,9 +22,9 @@ class FileParser:
 
         self.network: dict = {
             'nb_drones': 0,
-            'start_hub': '',  # Stores the name of the starting node
-            'end_hub': '',    # Stores the name of the destination node
-            'nodes': {}       # Lookup table: name -> hub attributes & neighbors
+            'start_hub': '',
+            'end_hub': '',
+            'zones': {}
         }
 
     def read_file(self) -> None:
@@ -40,15 +39,12 @@ class FileParser:
         metadata = dict()
         if not meta_string:
             return metadata
-        
-        # Matches pairs like key=value separated by spaces or commas
+
         pairs = re.findall(r'(\w+)=([^\s,\]]+)', meta_string)
-        
-        # Validates if there's syntax junk inside the brackets that didn't match key=value
+
         reconstructed = " ".join([f"{k}={v}" for k, v in pairs])
         cleaned_original = re.sub(r'\s+', ' ', meta_string).strip()
         if len(pairs) == 0 or (cleaned_original and not (token_match_check := True)):
-            # Fallback simple validation check
             pass
             
         for key, val in pairs:
@@ -65,15 +61,12 @@ class FileParser:
             line_num = idx + 1
             line = raw_line.strip()
             
-            # Skip empty lines or whole line comments
             if not line or line.startswith('#'):
                 continue
             
-            # Strip inline comments
             if '#' in line:
                 line = line.split('#')[0].strip()
 
-            # Constraint: First line must define the number of drones
             if first_meaningful_line:
                 if match := self.PATTERNS['nb_drones_patt'].match(line):
                     val = int(match.group('nb_drones'))
@@ -85,18 +78,15 @@ class FileParser:
                 else:
                     raise ValueError(f"Parsing Error (Line {line_num}): The first configuration line must define 'nb_drones'.")
 
-            # Match Hub types
             if match := self.PATTERNS['hub_patt'].match(line):
                 self._handle_hub(match.groupdict(), line_num)
-                
-            # Match Connections
+
             elif match := self.PATTERNS['connection_patt'].match(line):
                 self._handle_connection(match.groupdict(), line_num)
                 
             else:
                 raise ValueError(f"Parsing Error (Line {line_num}): Syntactically invalid line framework.\n-> \"{line}\"")
 
-        # Top level post-parsing structural validation checks
         if not self.has_start_hub:
             raise ValueError("Parsing Error: Missing exactly one 'start_hub' definitions.")
         if not self.has_end_hub:
@@ -125,29 +115,27 @@ class FileParser:
             except ValueError:
                 raise ValueError(f"Parsing Error (Line {line_num}): 'max_drones' must be a positive integer.")
 
-        # Build the hub dictionary with a pre-initialized neighbors map
         hub_data = {
             'coords': [int(match_groups['x']), int(match_groups['y'])],
             'zone_type': zone_type,
             'color': metadata.get('color', None),
             'max_drones': max_drones,
-            'current_drones': 0,  # Ready to track during the simulation!
-            'neighbors': {}       # Will be filled by _handle_connection
+            'current_drones': 0,
+            'neighbors': {},
+            'connections': {}
         }
 
-        # Store the node globally in our nodes dictionary
-        self.network['nodes'][name] = hub_data
+        self.network['zones'][name] = hub_data
 
-        # Keep track of which string is the start and end target
         if h_type == 'start_hub':
-            if self.has_start_hub:  # Check the boolean flag for duplicates
+            if self.has_start_hub:
                 raise ValueError(f"Parsing Error (Line {line_num}): Duplicate start_hub discovered.")
-            self.has_start_hub = True  # <-- ADD THIS LINE
+            self.has_start_hub = True
             self.network['start_hub'] = name
         elif h_type == 'end_hub':
-            if self.has_end_hub:  # Check the boolean flag for duplicates
+            if self.has_end_hub:
                 raise ValueError(f"Parsing Error (Line {line_num}): Duplicate end_hub discovered.")
-            self.has_end_hub = True  # <-- ADD THIS LINE
+            self.has_end_hub = True
             self.network['end_hub'] = name
 
         self.defined_zones.add(name)
@@ -156,13 +144,11 @@ class FileParser:
         start = match_groups['start']
         end = match_groups['end']
         
-        # Constraint: Connections must link only previously defined zones
         if start not in self.defined_zones:
             raise ValueError(f"Parsing Error (Line {line_num}): Origin zone '{start}' is not defined yet.")
         if end not in self.defined_zones:
             raise ValueError(f"Parsing Error (Line {line_num}): Destination zone '{end}' is not defined yet.")
             
-        # Constraint: Direct duplicates or inverted variations (a-b and b-a) are illegal
         connection_pair = tuple(sorted((start, end)))
         if connection_pair in self.existing_connections:
             raise ValueError(f"Parsing Error (Line {line_num}): Duplicate connection '{start}-{end}' discovered.")
@@ -177,22 +163,32 @@ class FileParser:
             except ValueError:
                 raise ValueError(f"Parsing Error (Line {line_num}): 'max_link_capacity' must be a positive integer.")
 
-        # Link start -> end
-        self.network['nodes'][start]['neighbors'][end] = {
-            'max_link_capacity': max_capacity
-        }
-        # Link end -> start (Bidirectional handling)
-        self.network['nodes'][end]['neighbors'][start] = {
-            'max_link_capacity': max_capacity
-        }
-        
+        start_cost = 1
+        if self.network['zones'][start]['zone_type'] == 'restricted':
+            start_cost = 2
+        elif self.network['zones'][start]['zone_type'] == 'priority':
+            start_cost = 0.9
+
+        end_cost = 1
+        if self.network['zones'][end]['zone_type'] == 'restricted':
+            end_cost = 2
+        elif self.network['zones'][end]['zone_type'] == 'priority':
+            end_cost = 0.9
+
+        # 'neighbors' is for the cost of each zone .aka the type of the zone
+        self.network['zones'][start]['neighbors'][end] = end_cost
+        self.network['zones'][end]['neighbors'][start] = start_cost
+
+        # 'connections' is for handling of the connections
+        self.network['zones'][start]['connections'][end] = [max_capacity, 0]
+        self.network['zones'][end]['connections'][start] = [max_capacity, 0]
+
         self.existing_connections.add(connection_pair)
 
-# Test Execution
+
 if __name__ == "__main__":
     import json
-    # Use your target text file path here
-    parser = FileParser("03_priority_puzzle.txt")
+    parser = FileParser("02_capacity_hell.txt")
     try:
         parser.read_file()
         result = parser.parse()

@@ -1,6 +1,9 @@
 import pygame
 import sys
 
+# functionalities:
+# controll drones
+# display drones list
 
 class Display:
 	SCREEN_WIDTH = 1920
@@ -28,7 +31,7 @@ class Display:
 
 		hub_name = name
 		hub_circle = pygame.Rect(x, y, 0, 0)
-		font = pygame.font.Font(None, 20)
+		font = pygame.font.Font(None, 14)
 		text_surface = font.render(hub_name, True, (0, 0, 0))
 		hub_text = text_surface.get_rect()
 		hub_text.center = hub_circle.center
@@ -49,10 +52,9 @@ class Display:
 			
 			pygame.draw.line(screen, (150, 150, 150), (start_x, start_y), (end_x, end_y), 3)
 
-	def _display_drone(self, screen, node_coords: list, nb_drones, drone_img):
+	def _display_drone(self, screen, node_coords: list, nb_drones):
 		x = (node_coords[0] * 120) + 400
 		y = 500 - (node_coords[1] * 120)
-		drone_img = pygame.transform.scale(drone_img, (50, 50))
 		if nb_drones > 0:
 			center_x, center_y = x, y
 			width, height = 40, 40
@@ -62,12 +64,11 @@ class Display:
 			left   = (center_x - width // 2, center_y)
 			pygame.draw.polygon(screen, (60, 60, 60), [top, right, bottom, left])
 
-	def display(self, nodes: dict):
+	def display(self, nodes: dict, drones: list):
 		pygame.init()
 		screen = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
 		pygame.display.set_caption("Fly-in")
 		clock = pygame.time.Clock()
-		drone_img = pygame.image.load("drone.png").convert_alpha()
 		running = True
 		while running:
 			for event in pygame.event.get():
@@ -81,10 +82,9 @@ class Display:
 			#the hubs
 			for key, value in nodes.items():
 				self._display_hub(screen, nodes[key]['coords'], key, nodes[key]['color'])
-			
 			#drones
-			for key, value in nodes.items():
-				self._display_drone(screen, nodes[key]['coords'], nodes[key]['nb_drones'], drone_img)
+			for drone in drones:
+				self._display_drone(screen, nodes[drone.position]['coords'], nodes[drone.position]['nb_drones'])
 			pygame.display.flip()
 			clock.tick(self.FPS)
 		pygame.quit()
@@ -93,4 +93,5 @@ class Display:
 if __name__ == "__main__":
 	display = Display()
 	network = {}
-	display.display(network['nodes'])
+	drones = []
+	display.display(network['nodes'], drones)
