@@ -1,6 +1,5 @@
 import re
 from typing import Any, Dict, Set, Optional
-from data import Drone, Zone, Network
 
 class FileParser:
     PATTERNS = {

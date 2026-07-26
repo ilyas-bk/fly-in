@@ -28,7 +28,7 @@ class Flyin:
 
 class Simulation:
 
-    def __init__(self, network):
+    def __init__(self):
         self.SCREEN_WIDTH = 1920
         self.SCREEN_HEIGHT = 1080
         self.FPS = 60
@@ -76,13 +76,13 @@ class Simulation:
     def _display_connection(self, screen, current_coords: list, neighbor_name: str, all_nodes: dict):
         if neighbor_name in all_nodes:
             neighbor_coords = all_nodes[neighbor_name]['coords']
-            
+
             start_x = (current_coords[0] * 120) + 400
             start_y = 500 - (current_coords[1] * 120)
-            
+
             end_x = (neighbor_coords[0] * 120) + 400
             end_y = 500 - (neighbor_coords[1] * 120)
-            
+
             pygame.draw.line(screen, (150, 150, 150), (start_x, start_y), (end_x, end_y), 3)
 
     def _display_drone(self, screen, node_coords: list):
@@ -96,9 +96,13 @@ class Simulation:
         left   = (center_x - width // 2, center_y)
         pygame.draw.polygon(screen, (60, 60, 60), [top, right, bottom, left])
 
+    def _display_move_count(self, screen, move_count: int):
+        font = pygame.font.Font(None, 36)
+        text_surface = font.render(f"Move Count: {move_count}", True, (0, 0, 0))
+        screen.blit(text_surface, (10, 10))
+
     def update_simulation_state(self, solution: SolutionLogic):
         solution.next_move()
-
 
     def draw(self, nodes, drones):
         self.screen.fill((255, 255, 255))
@@ -113,11 +117,12 @@ class Simulation:
         for drone in drones:
             self._display_drone(self.screen, nodes[drone.position]['coords'])
 
+        self._display_move_count(self.screen, solution.move_count)
+
         pygame.display.flip()
 
     def run(self, nodes, solution: SolutionLogic):
         running = True
-        count = 0
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -126,8 +131,7 @@ class Simulation:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
                         self.update_simulation_state(solution)
-                        print(count)
-                        count += 1
+                        solution.move_count += 1
 
             self.draw(nodes, solution.drones)
 
@@ -138,9 +142,10 @@ class Simulation:
 
 
 if __name__ == "__main__":
+    # the simulation uses dict of zones not the instances of Zone class
     fly_in = Flyin()
-    network = Network.parse("02_capacity_hell.txt")
+    network = Network.parse("01_the_impossible_dream.txt")
     solution = SolutionLogic(network)
-    simulation = Simulation(network)
+    simulation = Simulation()
     simulation.run(network['zones'], solution)
 
