@@ -1,5 +1,4 @@
 from parser import FileParser
-from display import Display
 from data import Data, Drone
 from simulation import Simulation
 
