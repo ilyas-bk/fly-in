@@ -1,11 +1,12 @@
 SHELL := /bin/bash
 
+all: install run
+
 install:
 	pip install -r requirements.txt
-	pip install flake8 mypy
 
 run:
-	. .venv/bin/activate && python simulation.py
+	python main.py
 
 build:
 	python -m build
@@ -15,10 +16,11 @@ clean:
 	rm -rf src/__pycache__ src/.mypy_cache
 
 lint:
-	. .venv/bin/activate && flake8 simulation.py logic.py data.py main.py parser.py
+	flake8 src/simulation.py src/logic.py src/data.py main.py src/parser.py
+	mypy . --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
 
 lint-strict:
-	flake8
+	flake8 src/simulation.py src/logic.py src/data.py main.py src/parser.py
 	mypy . --strict
 
 .PHONY: install run debug clean lint lint-strict
