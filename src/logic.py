@@ -76,6 +76,10 @@ class SolutionLogic:
 
     def next_move(self) -> None:
         """Advance all drones by one simulation step."""
+        for zone in self.zones.values():
+            for neighbor_name in zone.connections:
+                zone.connections[neighbor_name][1] = 0
+
         for drone in self.drones:
             if drone.path_idx >= len(drone.path):
                 continue
@@ -114,6 +118,15 @@ class SolutionLogic:
             target_zone.curr_drones += 1
             drone.position = target_zone.name
             drone.path_idx += 1
+
+        for drone in self.drones:
+            if drone.connection_from and drone.connection_to:
+                c_from = self.zones.get(drone.connection_from)
+                c_to = self.zones.get(drone.connection_to)
+                if c_from and drone.connection_to in c_from.connections:
+                    c_from.connections[drone.connection_to][1] += 1
+                if c_to and drone.connection_from in c_to.connections:
+                    c_to.connections[drone.connection_from][1] += 1
 
     def prepare_graph(self) -> dict[str, Any]:
         """Extract the graph structure used by the path finder."""

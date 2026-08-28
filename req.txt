@@ -1,5 +1,0 @@
-what's remaining:
-	- reset option
-	- fix count
-	- evaluation recoding display
-	

@@ -57,7 +57,7 @@ class Drone:
         self.connection_to: str | None = None
 
     @staticmethod
-    def init_drones(nb_drones: int) -> list["Drone"]:
+    def init_drones(nb_drones: int) -> list[Drone]:
         """Create the requested number of drones."""
         return [Drone("start") for _ in range(nb_drones)]
 
