@@ -93,18 +93,11 @@ class Simulation:
 
         font = pygame.font.Font(None, max(12, int(radius * 0.5)))
         text_surface = font.render(zone.name, True, (0, 0, 0))
-        # info_text_surface = font.render(
-        #     f"{zone.curr_drones}/{zone.capacity}",
-        #     True,
-        #     (0, 0, 0),
-        # )
         hub_text = text_surface.get_rect(center=(x, y))
-        # info_text = info_text_surface.get_rect(center=(x, y + 30))
 
         draw_color = self.COLORS.get(zone.color, (255, 255, 255))
         pygame.draw.circle(self.screen, draw_color, (int(x), int(y)), radius)
         self.screen.blit(text_surface, hub_text)
-        # self.screen.blit(info_text_surface, info_text)
 
     def _display_connection(
         self,
@@ -121,23 +114,8 @@ class Simulation:
         start = self._to_screen(zone.coords)
         end = self._to_screen(neighbor.coords)
 
-        # mid_x = (start[0] + end[0]) // 2
-        # mid_y = (start[1] + end[1]) // 2
         line_width = max(1, int(self.scale * 0.03))
         pygame.draw.line(self.screen, (150, 150, 150), start, end, line_width)
-
-        # connection_info = zone.connections.get(neighbor_name, [0, 0])
-        # max_drones = connection_info[0]
-        # active_drones = connection_info[1]
-        # font_size = max(12, int(self.scale * 0.03))
-        # font = pygame.font.Font(None, font_size)
-        # info_text_surface = font.render(
-        #     f"{active_drones}/{max_drones}",
-        #     True,
-        #     (0, 0, 0),
-        # )
-        # info_text = info_text_surface.get_rect(center=(mid_x, mid_y + 20))
-        # self.screen.blit(info_text_surface, info_text)
 
     def _display_drone_at(self, x: float, y: float) -> None:
         """Draw a drone marker at the given screen position."""
