@@ -4,7 +4,9 @@ import sys
 from typing import Any
 
 import pygame
+import time
 
+from src.data import Drone
 from src.logic import SolutionLogic
 
 
@@ -80,13 +82,13 @@ class Simulation:
 
     def _hub_radius(self) -> int:
         """Return the radius used to draw hubs."""
-        return max(8, int(self.scale * 0.35))
+        return max(8, min(24, int(self.scale * 0.35)))
 
     def _drone_size(self) -> int:
         """Return the size used to draw drones."""
-        return max(8, int(self.scale * 0.35))
+        return max(8, min(20, int(self.scale * 0.35)))
 
-    def _display_hub(self, zone: Any) -> None:
+    def _display_hub(self, zone: Any, drones: list[Any]) -> None:
         """Draw a single hub and its label."""
         x, y = self._to_screen(zone.coords)
         radius = self._hub_radius()
@@ -97,6 +99,7 @@ class Simulation:
 
         draw_color = self.COLORS.get(zone.color, (255, 255, 255))
         pygame.draw.circle(self.screen, draw_color, (int(x), int(y)), radius)
+        pygame.draw.circle(self.screen, (0, 0, 0), (int(x), int(y)), radius, 1)
         self.screen.blit(text_surface, hub_text)
 
     def _display_connection(
@@ -104,7 +107,7 @@ class Simulation:
         zone: Any,
         neighbor_name: str,
         zones: dict[str, Any],
-        drones: list[Any]
+        drones: list[Drone]
     ) -> None:
         """Draw a connection line between two neighboring hubs."""
         neighbor = zones.get(neighbor_name)
@@ -114,10 +117,19 @@ class Simulation:
         start = self._to_screen(zone.coords)
         end = self._to_screen(neighbor.coords)
 
-        line_width = max(1, int(self.scale * 0.03))
+        line_width = max(1, min(4, int(self.scale * 0.03)))
         pygame.draw.line(self.screen, (150, 150, 150), start, end, line_width)
 
-    def _display_drone_at(self, x: float, y: float) -> None:
+        connection_info = zone.connections.get(neighbor_name, [0, 0])
+        connection_info[1] = sum(
+            1 for drone in drones
+            if (drone.connection_from == zone.name and
+                drone.connection_to == neighbor_name)
+            or (drone.connection_from == neighbor_name and
+                drone.connection_to == zone.name)
+        )
+
+    def _display_drone_at(self, x: float, y: float, drone_id: int) -> None:
         """Draw a drone marker at the given screen position."""
         size = self._drone_size()
         top = (x, y - size // 2)
@@ -129,11 +141,16 @@ class Simulation:
             (60, 60, 60),
             [top, right, bottom, left],
         )
+        font = pygame.font.Font(None, max(12, int(size * 0.5)))
+        text_surface = font.render("D" + str(drone_id), True, (255, 255, 255))
+        text_rect = text_surface.get_rect(center=(int(x), int(y)))
 
-    def _display_drone(self, zone: Any) -> None:
+        self.screen.blit(text_surface, text_rect)
+
+    def _display_drone(self, zone: Any, drone_id: int) -> None:
         """Draw a drone at the coordinates of the given zone."""
         x, y = self._to_screen(zone.coords)
-        self._display_drone_at(x, y)
+        self._display_drone_at(x, y, drone_id)
 
     def _display_move_count(self, move_count: int) -> None:
         """Draw the current move counter in the top-left corner."""
@@ -145,33 +162,37 @@ class Simulation:
         )
         self.screen.blit(text_surface, (10, 10))
 
-    def update_simulation_state(self, solution: SolutionLogic) -> None:
+    def update_simulation_state(self, solution: SolutionLogic) -> bool:
         """Advance the simulation by one movement step."""
         reach_goal = True
-        solution.next_move()
         for drone in solution.drones:
             if drone.position != solution.dest:
                 reach_goal = False
+        solution.next_move()
         if not reach_goal:
             solution.move_count += 1
+        return reach_goal
 
     def draw(self, solution: SolutionLogic) -> None:
         """Render the current simulation state to the screen."""
         self.screen.fill((255, 255, 255))
         zones = solution.zones
+        drones = solution.drones
         self._update_viewport(zones)
 
         for zone in zones.values():
             for neighbor_name in zone.neighbors:
                 self._display_connection(zone,
                                          neighbor_name,
-                                         zones, solution.drones)
+                                         zones,
+                                         drones)
 
         for zone in zones.values():
-            self._display_hub(zone)
+            self._display_hub(zone, solution.drones)
 
         for drone in solution.drones:
-            if drone.connection_from and drone.connection_to:
+            if drone.connection_from and drone.connection_to and \
+                    zones[drone.connection_to].type == "restricted":
                 start = zones[drone.connection_from].coords
                 end = zones[drone.connection_to].coords
                 mid_coords = [
@@ -179,9 +200,9 @@ class Simulation:
                     (start[1] + end[1]) / 2,
                 ]
                 mid_x, mid_y = self._to_screen(mid_coords)
-                self._display_drone_at(mid_x, mid_y)
+                self._display_drone_at(mid_x, mid_y, drone.id)
                 continue
-            self._display_drone(zones[drone.position])
+            self._display_drone(zones[drone.position], drone.id)
         if solution.move_count < 0:
             self._display_move_count(0)
         else:
@@ -191,6 +212,7 @@ class Simulation:
     def run(self, solution: SolutionLogic) -> None:
         """Start the event loop and run the simulation until exit."""
         running = True
+        auto = False
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -206,9 +228,14 @@ class Simulation:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
                         self.update_simulation_state(solution)
+                    if event.key == pygame.K_e:
+                        auto = not auto
+            if auto:
+                self.update_simulation_state(solution)
+                time.sleep(0.3)
+                pass
 
             self.draw(solution)
-            self.clock.tick(self.FPS)
 
         pygame.quit()
         sys.exit()

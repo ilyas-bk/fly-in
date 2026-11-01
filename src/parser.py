@@ -44,22 +44,57 @@ class FileParser:
         try:
             with open(self.file_path, 'r') as file:
                 self.lines_raw = file.readlines()
-        except FileNotFoundError:
-            raise FileNotFoundError(
-                f"Error: the file {self.file_path} was not found."
+        except Exception:
+            raise Exception(
+                "Error: the file could not be read. "
+                "Please check the file path and permissions."
             )
 
     def _parse_metadata(
-        self, meta_string: Optional[str], context_line: int
+        self, meta_string: Optional[str], context_line: int, is_zone: bool
     ) -> Dict[str, str]:
         """Parse key=value pairs inside brackets regardless of order."""
+        valid_zone_keys = {"zone", "color", "max_drones"}
+        valid_connection_keys = {"max_link_capacity"}
         metadata: Dict[str, str] = {}
         if not meta_string:
             return metadata
 
+        metadata_parts = meta_string.split()
+        for part in metadata_parts:
+            if part.count('=') != 1:
+                raise ValueError(
+                    f"Parsing Error (Line {context_line}): "
+                    "Metadata must be in key=value format."
+                )
+            if part.split('=')[1] == '':
+                raise ValueError(
+                    f"Parsing Error (Line {context_line}): "
+                    "Metadata must be in key=value format."
+                )
+
         pairs = re.findall(r'(\w+)=([^\s,\]]+)', meta_string)
+        keys_in_pairs = {key for key, _ in pairs}
+        if len(keys_in_pairs) != len(pairs):
+            raise ValueError(
+                f"Parsing Error (Line {context_line}): "
+                "Duplicate metadata keys found."
+            )
+
         for key, val in pairs:
             metadata[key] = val
+        if is_zone and not \
+                all(key in valid_zone_keys for key in metadata.keys()):
+            raise ValueError(
+                f"Parsing Error (Line {context_line}): "
+                "Invalid metadata key(s) found."
+            )
+        if not is_zone and not \
+                all(key in valid_connection_keys for key in metadata.keys()):
+            raise ValueError(
+                f"Parsing Error (Line {context_line}): "
+                "Invalid metadata key(s) found."
+            )
         return metadata
 
     def parse(self) -> dict[str, Any]:
@@ -136,7 +171,7 @@ class FileParser:
                 f"Zone name '{name}' has already been defined."
             )
 
-        metadata = self._parse_metadata(match_groups["meta"], line_num)
+        metadata = self._parse_metadata(match_groups["meta"], line_num, True)
 
         zone_type = metadata.get("zone", "normal")
         if zone_type not in self.VALID_ZONE_TYPES:
@@ -157,10 +192,18 @@ class FileParser:
                     "'max_drones' must be a positive integer."
                 ) from exc
 
+        zone_color = metadata.get("color", None)
+        if zone_color is not None:
+            if not zone_color.isalpha():
+                raise ValueError(
+                    f"Parsing Error (Line {line_num}): "
+                    "'color' must be a string of alphabetic characters."
+                )
+
         hub_data: dict[str, Any] = {
             "coords": [int(match_groups["x"]), int(match_groups["y"])],
             "zone_type": zone_type,
-            "color": metadata.get("color", None),
+            "color": zone_color,
             "max_drones": max_drones,
             "current_drones": 0,
             "neighbors": {},
@@ -208,6 +251,12 @@ class FileParser:
                 f"Destination zone '{end}' is not defined yet."
             )
 
+        if start == end:
+            raise ValueError(
+                f"Parsing Error (Line {line_num}): "
+                "Self-connections are not allowed."
+            )
+
         connection_pair: tuple[str, str]
         if start <= end:
             connection_pair = (start, end)
@@ -219,7 +268,7 @@ class FileParser:
                 f"Duplicate connection '{start}-{end}' discovered."
             )
 
-        metadata = self._parse_metadata(match_groups["meta"], line_num)
+        metadata = self._parse_metadata(match_groups["meta"], line_num, False)
 
         max_capacity = 1
         if "max_link_capacity" in metadata:

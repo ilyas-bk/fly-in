@@ -20,15 +20,16 @@ class SolutionLogic:
     def __init__(self, network: dict[str, Any]) -> None:
         """Initialize the routing logic for a parsed network."""
         self.network = network
-        self.drones = Drone.init_drones(network["nb_drones"])
+        self.drones = Drone.init_drones(network["nb_drones"],
+                                        network["start_hub"])
         self.zones = Zone.init_zones(network)
         graph = self.prepare_graph()
         self.graph = graph["zones"]
         self.src = graph["src"]
         self.dest = graph["dest"]
-        self.move_count = -1
+        self.move_count = 0
         paths: list[list[str]] = []
-        for _drone in self.drones:
+        for _ in range(2 if len(self.drones) > 1 else 1):
             sol = self.dijkstra()
             if sol not in paths:
                 paths.append(sol)
@@ -56,6 +57,8 @@ class SolutionLogic:
             visited.add(tmp)
 
             for neighbor in self.graph[tmp]:
+                if self.network['zones'][neighbor]['zone_type'] == 'blocked':
+                    continue
                 if neighbor not in visited:
                     cost = node_data[tmp]["cost"] + self.graph[tmp][neighbor]
 
@@ -72,61 +75,81 @@ class SolutionLogic:
         rev_sol = sol[::-1]
         for curr_node, next_node in zip(rev_sol, rev_sol[1:]):
             self.graph[curr_node][next_node] += 0.5
+        if len(sol) < 2:
+            raise ValueError(
+                "No valid path found from start hub to end hub."
+            )
         return sol
 
     def next_move(self) -> None:
         """Advance all drones by one simulation step."""
-        for zone in self.zones.values():
-            for neighbor_name in zone.connections:
-                zone.connections[neighbor_name][1] = 0
+        start_zone = self.network["start_hub"]
+
+        link_occupancy: dict = {}
+        for d in self.drones:
+            if d.connection_from and d.connection_to:
+                key = (d.connection_from, d.connection_to)
+                link_occupancy[key] = link_occupancy.get(key, 0) + 1
 
         for drone in self.drones:
+            if drone.connection_to is not None and \
+                    self.zones[drone.connection_to].type == "restricted":
+                self._complete_drone_transit(drone)
+                continue
+
             if drone.path_idx >= len(drone.path):
                 continue
-            if drone.wait > 0:
-                drone.wait -= 1
-                continue
-            if drone.connection_to is not None:
-                drone.position = drone.connection_to
-                drone.connection_from = None
-                drone.connection_to = None
-                drone.path_idx += 1
-                target_zone = self.zones.get(drone.position)
-                if (
-                    target_zone is not None
-                    and target_zone.type == "restricted"
-                ):
-                    drone.wait = 1
-                continue
+
+            if drone.path and drone.path[0] == start_zone:
+                drone.path.pop(0)
+                if drone.path_idx >= len(drone.path):
+                    continue
 
             target_name = drone.path[drone.path_idx]
             curr_zone = self.zones.get(drone.position)
             target_zone = self.zones.get(target_name)
-            if curr_zone is None or target_zone is None:
+
+            if not curr_zone or not target_zone:
                 continue
-            if target_zone.curr_drones >= target_zone.capacity:
+
+            effective_occupancy = (target_zone.curr_drones +
+                                   getattr(target_zone, "reserved_drones", 0))
+            if (target_zone.name != start_zone and
+                    effective_occupancy >= target_zone.capacity):
+                continue
+
+            link_key = (curr_zone.name, target_zone.name)
+            max_link_capacity = curr_zone.connections[target_zone.name][0]
+            if link_occupancy.get(link_key, 0) >= max_link_capacity:
                 continue
 
             if target_zone.type == "restricted":
-                curr_zone.curr_drones -= 1
-                target_zone.curr_drones += 1
                 drone.connection_from = curr_zone.name
                 drone.connection_to = target_zone.name
-                continue
+                link_occupancy[link_key] = link_occupancy.get(link_key, 0) + 1
+                curr_zone.curr_drones -= 1
+                target_zone.reserved_drones += 1
+            else:
+                curr_zone.curr_drones -= 1
+                target_zone.curr_drones += 1
+                drone.position = target_zone.name
+                drone.path_idx += 1
+                drone.connection_from = None
+                drone.connection_to = None
+                link_occupancy[link_key] = link_occupancy.get(link_key, 0) + 1
 
-            curr_zone.curr_drones -= 1
+    def _complete_drone_transit(self, drone: Drone) -> None:
+        """Complete movement for a drone entering a restricted zone."""
+        drone.position = drone.connection_to or ""
+        drone.connection_from = None
+        drone.connection_to = None
+        drone.path_idx += 1
+
+        target_zone = self.zones.get(drone.position)
+        if target_zone:
+            current_reserved = getattr(target_zone, "reserved_drones", 1)
+            target_zone.reserved_drones = max(0, current_reserved - 1)
             target_zone.curr_drones += 1
-            drone.position = target_zone.name
-            drone.path_idx += 1
-
-        for drone in self.drones:
-            if drone.connection_from and drone.connection_to:
-                c_from = self.zones.get(drone.connection_from)
-                c_to = self.zones.get(drone.connection_to)
-                if c_from and drone.connection_to in c_from.connections:
-                    c_from.connections[drone.connection_to][1] += 1
-                if c_to and drone.connection_from in c_to.connections:
-                    c_to.connections[drone.connection_from][1] += 1
 
     def prepare_graph(self) -> dict[str, Any]:
         """Extract the graph structure used by the path finder."""

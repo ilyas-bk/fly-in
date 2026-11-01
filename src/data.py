@@ -17,10 +17,10 @@ class Network:
     def update(self, network: dict[str, Any]) -> dict[str, Any]:
         """Update the boundary zones to match the drone capacity."""
         metadata = network
-        first_zone = next(iter(metadata["zones"]))
-        last_zone = next(reversed(metadata["zones"]))
-        metadata["zones"][first_zone]["max_drones"] = self.nb_drones
-        metadata["zones"][last_zone]["max_drones"] = self.nb_drones
+        start_zone = metadata["start_hub"]
+        end_zone = metadata["end_hub"]
+        metadata["zones"][start_zone]["max_drones"] = self.nb_drones
+        metadata["zones"][end_zone]["max_drones"] = self.nb_drones
         return metadata
 
     @staticmethod
@@ -57,9 +57,9 @@ class Drone:
         self.connection_to: str | None = None
 
     @staticmethod
-    def init_drones(nb_drones: int) -> list[Drone]:
+    def init_drones(nb_drones: int, start: str) -> list[Drone]:
         """Create the requested number of drones."""
-        return [Drone("start") for _ in range(nb_drones)]
+        return [Drone(start) for _ in range(nb_drones)]
 
 
 class Zone:
@@ -75,10 +75,14 @@ class Zone:
         self.neighbors = zone["neighbors"]
         self.connections = zone["connections"]
         self.type = zone["zone_type"]
+        self.reserved_drones = 0
 
     @staticmethod
     def init_zones(network: dict[str, Any]) -> dict[str, "Zone"]:
         """Build a mapping of zone names to ``Zone`` instances."""
+        start_zone = network["start_hub"]
+        nb_drones = network["nb_drones"]
+        network["zones"][start_zone]["current_drones"] = nb_drones
         return {
             name: Zone(data, name)
             for name, data in network["zones"].items()
